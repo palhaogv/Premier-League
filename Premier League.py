@@ -2,5 +2,5 @@ import funct
 import pandas as pd
 
 
+x, y = funct.training_test_data('regression', 'AvgHr')
 
-menor, maior = funct.by_rods_R(3886, '2019/20')

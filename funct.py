@@ -7,7 +7,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression, LinearRegression
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, RobustScaler
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingRegressor, GradientBoostingClassifier
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
 from sklearn.model_selection import GridSearchCV
@@ -20,7 +20,7 @@ def frames_season():
     # Creating the frames by season
     frames = []
     new_frames = []
-    for i in range(2005, 2020):
+    for i in range(2005, 2019):
         globals()['df' + str(i)] = pd.read_csv(r"frames\\" + str(i) + '.csv', nrows=380)
         globals()['df' + str(i)].dropna()
         frames.append(globals()['df' + str(i)])
@@ -30,30 +30,35 @@ def frames_season():
     for frame in frames:
         frame['ID'] = frame.index + 1
         frame['ID'] = frame['ID'].apply(lambda x: '{0:0>5}'.format(x))
-        columns_name = ['ID', 'Date', 'Team', 'FTG', 'FTR', 'HTG', 'HTR', 'S', 'ST', 'C', 'F', 'Y', 'R',
+        frame['FTGT'] = frame['FTHG'] + frame['FTAG']
+        columns_name = ['ID', 'Date', 'Team', 'FTG', 'FTR', 'FTGT', 'HTG', 'HTR', 'S', 'ST', 'C', 'F', 'Y', 'R',
                         'B365H', 'BWH', 'IWH', 'VCH', 'WHH',
                         'B365D', 'BWD', 'IWD', 'VCD', 'WHD',
-                        'B365A', 'BWA', 'IWA', 'VCA', 'WHA']
+                        'B365A', 'BWA', 'IWA', 'VCA', 'WHA',
+                        'BbAv>2.5', 'BbAv<2.5']
 
         # Home games
-        frame_h = frame[['ID', 'Date', 'HomeTeam', 'FTHG', 'FTR', 'HTHG', 'HTR', 'HS', 'HST', 'HC', 'HF', 'HY', 'HR',
+        frame_h = frame[['ID', 'Date', 'HomeTeam', 'FTHG', 'FTR', 'FTGT', 'HTHG', 'HTR', 'HS', 'HST', 'HC', 'HF', 'HY', 'HR',
                          'B365H', 'BWH', 'IWH', 'VCH', 'WHH',
                          'B365D', 'BWD', 'IWD', 'VCD', 'WHD',
-                         'B365A', 'BWA', 'IWA', 'VCA', 'WHA']].copy()
+                         'B365A', 'BWA', 'IWA', 'VCA', 'WHA',
+                         'BbAv>2.5', 'BbAv<2.5']].copy()
         frame_h.columns = columns_name
         frame_h['Location'] = 1
 
         # Away games
-        frame_A = frame[['ID', 'Date', 'AwayTeam', 'FTAG', 'FTR', 'HTAG', 'HTR', 'AS', 'AST', 'AC', 'AF', 'AY', 'AR',
+        frame_A = frame[['ID', 'Date', 'AwayTeam', 'FTAG', 'FTR', 'FTGT', 'HTAG', 'HTR', 'AS', 'AST', 'AC', 'AF', 'AY', 'AR',
                          'B365H', 'BWH', 'IWH', 'VCH', 'WHH',
                          'B365D', 'BWD', 'IWD', 'VCD', 'WHD',
-                         'B365A', 'BWA', 'IWA', 'VCA', 'WHA']].copy()
+                         'B365A', 'BWA', 'IWA', 'VCA', 'WHA',
+                         'BbAv>2.5', 'BbAv<2.5']].copy()
         frame_A.columns = columns_name
         frame_A['Location'] = 0
 
         # Merge and making stats
         new_data_set = pd.merge(frame_h, frame_A, how='outer').sort_values('ID')
 
+        new_data_set['FTGT_ALL_MEAN'] = new_data_set.groupby('Team')['FTGT'].transform(lambda x: x.expanding().mean().shift())
         new_data_set['FTG_ALL_MEAN'] = new_data_set.groupby('Team')['FTG'].transform(lambda x: x.expanding().mean().shift())
         new_data_set['HTG_ALL_MEAN'] = new_data_set.groupby('Team')['HTG'].transform(lambda x: x.expanding().mean().shift())
         new_data_set['S_ALL_MEAN'] = new_data_set.groupby('Team')['S'].transform(lambda x: x.expanding().mean().shift())
@@ -65,27 +70,29 @@ def frames_season():
 
         # Sep and merging again by game
         home_teams = new_data_set[new_data_set['Location'] == 1]
-        home_teams.columns = ['ID', 'Date', 'HomeTeam', 'FTHG', 'FTR', 'HTHG', 'HTR', 'HS', 'HST', 'HC', 'HF', 'HY',
+        home_teams.columns = ['ID', 'Date', 'HomeTeam', 'FTHG', 'FTR', 'FTGT', 'HTHG', 'HTR', 'HS', 'HST', 'HC', 'HF', 'HY',
                               'HR', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD',
-                              'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'Location',
+                              'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'BbAv>2.5', 'BbAv<2.5', 'Location', 'FTGHT_ALL_MEAN',
                               'FTHG_ALL_MEAN', 'HTHG_ALL_MEAN', 'HS_ALL_MEAN', 'HST_ALL_MEAN', 'HC_ALL_MEAN', 'HF_ALL_MEAN',
                               'HY_ALL_MEAN', 'HR_ALL_MEAN']
         #home_teams.reset_index(drop=True)
 
         away_teams = new_data_set[new_data_set['Location'] == 0]
-        away_teams.columns = ['ID', 'Date', 'AwayTeam', 'FTAG', 'FTR', 'HTAG', 'HTR', 'AS', 'AST', 'AC', 'AF', 'AY',
+        away_teams.columns = ['ID', 'Date', 'AwayTeam', 'FTAG', 'FTR', 'FTGT', 'HTAG', 'HTR', 'AS', 'AST', 'AC', 'AF', 'AY',
                               'AR', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD',
-                              'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'Location',
+                              'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'BbAv>2.5', 'BbAv<2.5', 'Location', 'FTGAT_ALL_MEAN',
                               'FTAG_ALL_MEAN', 'HTAG_ALL_MEAN', 'AS_ALL_MEAN', 'AST_ALL_MEAN', 'AC_ALL_MEAN', 'AF_ALL_MEAN',
                               'AY_ALL_MEAN', 'AR_ALL_MEAN']
         #away_teams.reset_index(drop=True)
 
-        frame_merge = pd.merge(home_teams, away_teams, left_on=['ID', 'Date', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD', 'B365A', 'BWA', 'IWA', 'VCA', 'WHA'],
-                               right_on=['ID', 'Date', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD', 'B365A', 'BWA', 'IWA', 'VCA', 'WHA'])
+        frame_merge = pd.merge(home_teams, away_teams, left_on=['ID', 'Date', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD', 'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'BbAv>2.5', 'BbAv<2.5'],
+                               right_on=['ID', 'Date', 'B365H', 'BWH', 'IWH', 'VCH', 'WHH', 'B365D', 'BWD', 'IWD', 'VCD', 'WHD', 'B365A', 'BWA', 'IWA', 'VCA', 'WHA', 'BbAv>2.5', 'BbAv<2.5'])
                                
-        frame_merge = frame_merge.drop(['FTR_y', 'HTR_y', 'Location_y', 'Location_x'], axis=1)
-        frame_merge = frame_merge.rename(columns={'FTR_x': 'FTR', 'HTR_x': 'HTR'})
+        frame_merge = frame_merge.drop(['FTR_y', 'HTR_y', 'Location_y', 'Location_x', 'FTGT_y'], axis=1)
+        frame_merge = frame_merge.rename(columns={'FTR_x': 'FTR', 'HTR_x': 'HTR', 'FTGT_x': 'FTGT'})
 
+        frame_merge['FTGHT_MEAN'] = frame_merge.groupby('HomeTeam')['FTGT'].transform(lambda x: x.expanding().mean().shift())
+        frame_merge['FTGAT_MEAN'] = frame_merge.groupby('AwayTeam')['FTGT'].transform(lambda x: x.expanding().mean().shift())
         frame_merge['FTHG_MEAN'] = frame_merge.groupby('HomeTeam')['FTHG'].transform(lambda x: x.expanding().mean().shift()) # FTHG = Full Time Home Team Goals
         frame_merge['FTAG_MEAN'] = frame_merge.groupby('AwayTeam')['FTAG'].transform(lambda x: x.expanding().mean().shift()) # FTAG = Full Time Away Team Goals
         frame_merge['HTHG_MEAN'] = frame_merge.groupby('HomeTeam')['HTHG'].transform(lambda x: x.expanding().mean().shift()) # HTHG = Half Time Home Team Goals
@@ -121,6 +128,8 @@ def frames_season():
         #Last 2
         frame_merge['LAST_2_MP_H'] = frame_merge.groupby('HomeTeam')['FTR'].transform(lambda x: x.rolling(window=2).sum().shift())
         frame_merge['LAST_2_MP_A'] = frame_merge.groupby('AwayTeam')['FTR_A'].transform(lambda x: x.rolling(window=2).sum().shift())
+        frame_merge['LAST_2_FTGHT_MEAN'] = frame_merge.groupby('HomeTeam')['FTGT'].transform(lambda x: x.rolling(window=2).mean().shift())
+        frame_merge['LAST_2_FTGAT_MEAN'] = frame_merge.groupby('AwayTeam')['FTGT'].transform(lambda x: x.rolling(window=2).mean().shift())
         frame_merge['LAST_2_FTHG_MEAN'] = frame_merge.groupby('HomeTeam')['FTHG'].transform(lambda x: x.rolling(window=2).mean().shift())
         frame_merge['LAST_2_FTAG_MEAN'] = frame_merge.groupby('AwayTeam')['FTAG'].transform(lambda x: x.rolling(window=2).mean().shift())
         frame_merge['LAST_2_HS_MEAN'] = frame_merge.groupby('HomeTeam')['HS'].transform(lambda x: x.rolling(window=2).mean().shift())
@@ -138,6 +147,8 @@ def frames_season():
         #Last 3
         frame_merge['LAST_3_MP_H'] = frame_merge.groupby('HomeTeam')['FTR'].transform(lambda x: x.rolling(window=3).sum().shift())
         frame_merge['LAST_3_MP_A'] = frame_merge.groupby('AwayTeam')['FTR_A'].transform(lambda x: x.rolling(window=3).sum().shift())
+        frame_merge['LAST_3_FTGHT_MEAN'] = frame_merge.groupby('HomeTeam')['FTGT'].transform(lambda x: x.rolling(window=3).mean().shift())
+        frame_merge['LAST_3_FTGAT_MEAN'] = frame_merge.groupby('AwayTeam')['FTGT'].transform(lambda x: x.rolling(window=3).mean().shift())
         frame_merge['LAST_3_FTHG_MEAN'] = frame_merge.groupby('HomeTeam')['FTHG'].transform(lambda x: x.rolling(window=3).mean().shift())
         frame_merge['LAST_3_FTAG_MEAN'] = frame_merge.groupby('AwayTeam')['FTAG'].transform(lambda x: x.rolling(window=3).mean().shift())
         frame_merge['LAST_3_HS_MEAN'] = frame_merge.groupby('HomeTeam')['HS'].transform(lambda x: x.rolling(window=3).mean().shift())
@@ -154,6 +165,8 @@ def frames_season():
         # Last 5
         frame_merge['LAST_5_MP_H'] = frame_merge.groupby('HomeTeam')['FTR'].transform(lambda x: x.rolling(window=5).sum().shift())
         frame_merge['LAST_5_MP_A'] = frame_merge.groupby('AwayTeam')['FTR_A'].transform(lambda x: x.rolling(window=5).sum().shift())
+        frame_merge['LAST_5_FTGHT_MEAN'] = frame_merge.groupby('HomeTeam')['FTGT'].transform(lambda x: x.rolling(window=5).mean().shift())
+        frame_merge['LAST_5_FTGAT_MEAN'] = frame_merge.groupby('AwayTeam')['FTGT'].transform(lambda x: x.rolling(window=5).mean().shift())
         frame_merge['LAST_5_FTHG_MEAN'] = frame_merge.groupby('HomeTeam')['FTHG'].transform(lambda x: x.rolling(window=5).mean().shift())
         frame_merge['LAST_5_FTAG_MEAN'] = frame_merge.groupby('AwayTeam')['FTAG'].transform(lambda x: x.rolling(window=5).mean().shift())
         frame_merge['LAST_5_HS_MEAN'] = frame_merge.groupby('HomeTeam')['HS'].transform(lambda x: x.rolling(window=5).mean().shift())
@@ -174,10 +187,10 @@ def frames_season():
 def data_set():
     frames = frames_season()
     premier_league_stats = pd.concat(frames)
-    columns_to_use = ['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTHG_MEAN', 'FTAG', 'FTR', 'FTR_A', 'Diff_POINTS',
+    columns_to_use = ['Date', 'HomeTeam', 'AwayTeam', 'FTGT', 'FTHG', 'FTHG_MEAN', 'FTAG', 'FTR', 'FTR_A', 'Diff_POINTS',
                       'LAST_2_MP_H', 'LAST_2_MP_A', 'LAST_3_MP_H', 'LAST_3_MP_A', 'LAST_5_MP_H', 'LAST_5_MP_A', 'H_DRAWS',
                       'A_DRAWS', 'H_POINTS', 'A_POINTS', 'HTHG', 'HTAG', 'HTR', 'HS', 'AS', 'HST', 'AST', 'HC', 'AC', 'HF',
-                      'AF', 'HY', 'AY', 'HR', 'AR', 'AvgHr', 'AvgDr', 'AvgAr', 'FTAG_MEAN', 'HTHG_MEAN', 'HTAG_MEAN', 'HS_MEAN',
+                      'AF', 'HY', 'AY', 'HR', 'AR', 'AvgHr', 'AvgDr', 'AvgAr', 'BbAv>2.5', 'BbAv<2.5', 'FTAG_MEAN', 'HTHG_MEAN', 'HTAG_MEAN', 'HS_MEAN',
                       'AS_MEAN', 'HST_MEAN', 'AST_MEAN', 'HC_MEAN', 'AC_MEAN', 'HF_MEAN', 'AF_MEAN', 'HY_MEAN', 'AY_MEAN', 'HR_MEAN',
                       'AR_MEAN', 'LAST_2_FTHG_MEAN', 'LAST_2_FTAG_MEAN', 'LAST_3_FTHG_MEAN', 'LAST_3_FTAG_MEAN', 'LAST_5_FTHG_MEAN', 'LAST_5_FTAG_MEAN',
                       'LAST_2_HS_MEAN', 'LAST_2_AS_MEAN', 'LAST_2_HC_MEAN', 'LAST_2_AC_MEAN', 'LAST_2_HF_MEAN', 'LAST_2_AF_MEAN',
@@ -186,23 +199,24 @@ def data_set():
                       'LAST_3_AF_MEAN', 'LAST_3_HY_MEAN', 'LAST_3_AY_MEAN', 'LAST_3_HR_MEAN', 'LAST_3_AR_MEAN',
                       'LAST_5_HS_MEAN', 'LAST_5_AS_MEAN', 'LAST_5_HC_MEAN', 'LAST_5_AC_MEAN', 'LAST_5_HF_MEAN',
                       'LAST_5_AF_MEAN', 'LAST_5_HY_MEAN', 'LAST_5_AY_MEAN', 'LAST_5_HR_MEAN', 'LAST_5_AR_MEAN',
-                      'FTHG_ALL_MEAN', 'HTHG_ALL_MEAN', 'HS_ALL_MEAN', 'HST_ALL_MEAN', 'HC_ALL_MEAN', 'HF_ALL_MEAN', 'HY_ALL_MEAN', 'HR_ALL_MEAN',
-                      'FTAG_ALL_MEAN', 'HTAG_ALL_MEAN', 'AS_ALL_MEAN', 'AST_ALL_MEAN', 'AC_ALL_MEAN', 'AF_ALL_MEAN',
-                      'AY_ALL_MEAN', 'AR_ALL_MEAN']
+                      'FTGHT_ALL_MEAN', 'FTHG_ALL_MEAN', 'HTHG_ALL_MEAN', 'HS_ALL_MEAN', 'HST_ALL_MEAN', 'HC_ALL_MEAN', 'HF_ALL_MEAN', 'HY_ALL_MEAN', 'HR_ALL_MEAN',
+                      'FTGAT_ALL_MEAN', 'FTAG_ALL_MEAN', 'HTAG_ALL_MEAN', 'AS_ALL_MEAN', 'AST_ALL_MEAN', 'AC_ALL_MEAN', 'AF_ALL_MEAN',
+                      'AY_ALL_MEAN', 'AR_ALL_MEAN',
+                      'FTGHT_MEAN', 'FTGAT_MEAN', 'LAST_2_FTGHT_MEAN', 'LAST_2_FTGAT_MEAN', 'LAST_3_FTGHT_MEAN', 'LAST_3_FTGAT_MEAN', 'LAST_5_FTGHT_MEAN', 'LAST_5_FTGAT_MEAN']
     premier_league_stats = premier_league_stats[columns_to_use]
     premier_league_stats = premier_league_stats.dropna().reset_index(drop=True)
     return premier_league_stats
 
 
-def feature_and_target(tML=str):
+def feature_and_target(tML=str, tar=str):
     features = ['LAST_2_HS_MEAN', 'LAST_2_AS_MEAN', 'LAST_2_HC_MEAN', 'LAST_2_AC_MEAN', 'LAST_2_HF_MEAN',
             'LAST_2_AF_MEAN', 'LAST_2_HY_MEAN', 'LAST_2_AY_MEAN', 'LAST_2_HR_MEAN', 'LAST_2_AR_MEAN',
             'LAST_3_HS_MEAN', 'LAST_3_AS_MEAN', 'LAST_3_HC_MEAN', 'LAST_3_AC_MEAN', 'LAST_3_HF_MEAN',
             'LAST_3_AF_MEAN', 'LAST_3_HY_MEAN', 'LAST_3_AY_MEAN', 'LAST_3_HR_MEAN', 'LAST_3_AR_MEAN',
             'LAST_5_HS_MEAN', 'LAST_5_AS_MEAN', 'LAST_5_HC_MEAN', 'LAST_5_AC_MEAN', 'LAST_5_HF_MEAN',
             'LAST_5_AF_MEAN', 'LAST_5_HY_MEAN', 'LAST_5_AY_MEAN', 'LAST_5_HR_MEAN', 'LAST_5_AR_MEAN',
-            'FTHG_ALL_MEAN', 'HTHG_ALL_MEAN', 'HS_ALL_MEAN', 'HST_ALL_MEAN', 'HC_ALL_MEAN', 'HF_ALL_MEAN', 'HY_ALL_MEAN',
-            'HR_ALL_MEAN', 'FTAG_ALL_MEAN', 'HTAG_ALL_MEAN', 'AS_ALL_MEAN', 'AST_ALL_MEAN', 'AC_ALL_MEAN', 'AF_ALL_MEAN',
+            'FTGHT_ALL_MEAN', 'FTHG_ALL_MEAN', 'HTHG_ALL_MEAN', 'HS_ALL_MEAN', 'HST_ALL_MEAN', 'HC_ALL_MEAN', 'HF_ALL_MEAN', 'HY_ALL_MEAN',
+            'HR_ALL_MEAN', 'FTGAT_ALL_MEAN', 'FTAG_ALL_MEAN', 'HTAG_ALL_MEAN', 'AS_ALL_MEAN', 'AST_ALL_MEAN', 'AC_ALL_MEAN', 'AF_ALL_MEAN',
             'AY_ALL_MEAN', 'AR_ALL_MEAN', 'FTHG_MEAN', 'FTAG_MEAN', 'HTHG_MEAN', 'HTAG_MEAN', 'HS_MEAN', 'AS_MEAN', 'HST_MEAN',
             'AST_MEAN', 'HC_MEAN', 'AC_MEAN', 'HF_MEAN', 'AF_MEAN', 'HY_MEAN', 'AY_MEAN', 'HR_MEAN', 'AR_MEAN', 'H_POINTS', 'A_POINTS',
             'H_DRAWS', 'A_DRAWS', 'Diff_POINTS', 'LAST_2_MP_H', 'LAST_2_MP_A', 'LAST_2_FTHG_MEAN', 'LAST_2_FTAG_MEAN',
@@ -210,10 +224,10 @@ def feature_and_target(tML=str):
             'LAST_5_FTAG_MEAN']
 
     if tML == 'classifier':
-        target = ['FTR']
+        target = [tar]
 
     if tML == 'regression':
-        target = ['AvgHr']
+        target = [tar]
 
     return features, target
 
@@ -377,11 +391,11 @@ def scaler(X_tr, X_te):
     return X_train_transf, X_test_transf
 
 
-def by_rods_C(temp_line, season=str, bet_by_rod=10, tML='classifier'):
+def by_rods_C(temp_line, season=str, bet_by_rod=10, tML='classifier', tar=str):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    features, target = feature_and_target(tML)
+    features, target = feature_and_target(tML, tar)
     data_base = data_set()
     rods = []
     index_r = []
@@ -440,11 +454,11 @@ def by_rods_C(temp_line, season=str, bet_by_rod=10, tML='classifier'):
     return pd.concat(frames), pd.concat(frames_f)
 
 
-def by_rods_R(temp_line, season=str, bet_by_rod=10, tML='regression'):
+def by_rods_R(temp_line, season=str, bet_by_rod=10, tML='regression', tar=str):
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    features, target = feature_and_target(tML)
+    features, target = feature_and_target(tML, tar)
     data_base = data_set()
     rods = []
     index_r = []
@@ -502,10 +516,10 @@ def by_rods_R(temp_line, season=str, bet_by_rod=10, tML='regression'):
     return pd.concat(frames_menor), pd.concat(frames_maior)
 
 
-def training_test_data(tML=str):
+def training_test_data(tML=str, tar=str):
     if tML == 'classifier':
         premier_league_ds = data_set()
-        features, target = feature_and_target()
+        features, target = feature_and_target(tML, tar)
 
         X_train, X_test, y_train, y_test = train_test_split(premier_league_ds[features], premier_league_ds[target], random_state=0)
 
@@ -524,7 +538,7 @@ def training_test_data(tML=str):
 
     if tML == 'regression':
         premier_league_ds = data_set()
-        features, target = feature_and_target(tML='regression')
+        features, target = feature_and_target(tML, tar)
 
         X_train, X_test, y_train, y_test = train_test_split(premier_league_ds[features], premier_league_ds[target], random_state=0)
 
@@ -532,9 +546,22 @@ def training_test_data(tML=str):
 
         X_test['PREDICTS'] = XGB_r(X_train_transf, y_train, X_test_transf, y_test, text=True)
         DB_test = pd.merge(X_test, premier_league_ds, how='left')
-        DB_test['Gain'] = np.where(DB_test['FTR'] == 2, DB_test['AvgHr'] - 1, -1)
-        DB_test['aposta'] = np.where(DB_test['AvgHr'] > DB_test['PREDICTS'], 1, 0)
-        DB_test = DB_test[['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR', 'AvgHr', 'PREDICTS', 'Gain', 'aposta']]
+        if tar == 'BbAv<2.5':
+            DB_test['Gain'] = np.where((DB_test['FTHG'] + DB_test['FTAG']) < 2, DB_test['BbAv<2.5'] - 1, -1)
+            DB_test['aposta'] = np.where(DB_test['BbAv<2.5'] > DB_test['PREDICTS'], 1, 0)
+        if tar == 'BbAv>2.5':
+            DB_test['Gain'] = np.where((DB_test['FTHG'] + DB_test['FTAG']) > 2, DB_test['BbAv>2.5'] - 1, -1)
+            DB_test['aposta'] = np.where(DB_test['BbAv>2.5'] > DB_test['PREDICTS'], 1, 0)
+        if tar == 'AvgHr':
+            DB_test['Gain'] = np.where(DB_test['FTR'] == 2, DB_test['AvgHr'] - 1, -1)
+            DB_test['aposta'] = np.where(DB_test['AvgHr'] > DB_test['PREDICTS'], 1, 0)
+        if tar == 'AvgAr':
+            DB_test['Gain'] = np.where(DB_test['FTR'] == 0, DB_test['AvgAr'] - 1, -1)
+            DB_test['aposta'] = np.where(DB_test['AvgAr'] > DB_test['PREDICTS'], 1, 0)
+        if tar == 'AvgDr':
+            DB_test['Gain'] = np.where(DB_test['FTR'] == 1, DB_test['AvgHr'] - 1, -1)
+            DB_test['aposta'] = np.where(DB_test['AvgAr'] > DB_test['PREDICTS'], 1, 0)
+        DB_test = DB_test[['Date', 'HomeTeam', 'AwayTeam', 'FTHG', 'FTAG', 'FTR', 'AvgHr', 'AvgAr', 'AvgDr', 'BbAv>2.5', 'BbAv<2.5', 'PREDICTS', 'Gain', 'aposta']]
         db_test_menor = DB_test[DB_test['aposta'] == 1]
         db_test_maior = DB_test[DB_test['aposta'] == 0]
         print(f'Warging 1 dollar in the overrated odds, at the end of {len(db_test_maior)} games, \n'
