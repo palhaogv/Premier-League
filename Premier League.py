@@ -2,5 +2,6 @@ import funct
 import pandas as pd
 
 
-x, y = funct.training_test_data('regression', 'AvgHr')
+DB_test = funct.training_test_data_2('FTR', 'AvgHr')
+DB_test
 

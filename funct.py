@@ -204,6 +204,7 @@ def data_set():
                       'AY_ALL_MEAN', 'AR_ALL_MEAN',
                       'FTGHT_MEAN', 'FTGAT_MEAN', 'LAST_2_FTGHT_MEAN', 'LAST_2_FTGAT_MEAN', 'LAST_3_FTGHT_MEAN', 'LAST_3_FTGAT_MEAN', 'LAST_5_FTGHT_MEAN', 'LAST_5_FTGAT_MEAN']
     premier_league_stats = premier_league_stats[columns_to_use]
+    premier_league_stats['FTGT_C'] = np.where(premier_league_stats['FTGT'] > 2.5, 1, 0)
     premier_league_stats = premier_league_stats.dropna().reset_index(drop=True)
     return premier_league_stats
 
@@ -310,10 +311,11 @@ def RandomF(Xtr, ytr, Xte, yte):
     return rf.predict(Xte)
 
 
-def XGB(Xtr, ytr, Xte, yte=None):
+def XGB(Xtr, ytr, Xte, yte=None, text=True):
     xg = XGBClassifier().fit(Xtr, ytr)
     y_pred = xg.predict(Xte)
-    print(f'Accuracy of Logistic Regression test on train set is: {xg.score(Xtr, ytr)}')
+    if text == True:
+        print(f'Accuracy of Logistic Regression test on train set is: {xg.score(Xtr, ytr)}')
     if yte is not None:
         print(f'Accuracy of Logistic Regression test on test set is: {xg.score(Xte, yte)}')
     return y_pred
@@ -525,16 +527,26 @@ def training_test_data(tML=str, tar=str):
 
         X_train_transf, X_test_transf = scaler(X_train, X_test)
 
-        X_test['PREDICTS'] = SVC_test(X_train_transf, y_train, X_test_transf, y_test, text=True)
+        X_test['PREDICTS'] = logistic_reg(X_train_transf, y_train, X_test_transf, y_test, text=True)
         DB_test = pd.merge(X_test, premier_league_ds, how='left')
-        DB_test['ODD_CHOSEN'] = np.select([DB_test['PREDICTS'] == 2, DB_test['PREDICTS'] == 1, DB_test['PREDICTS'] == 0], [DB_test['AvgHr'] - 1, DB_test['AvgDr'] - 1, DB_test['AvgAr'] - 1], default=None)
-        DB_test = DB_test[['Date', 'HomeTeam', 'AwayTeam', 'FTR', 'PREDICTS', 'ODD_CHOSEN']]
-        DB_test['GAIN'] = np.where(DB_test['FTR'] == DB_test['PREDICTS'], DB_test['ODD_CHOSEN'], -1)
-        #DB_test = DB_test[DB_test['ODD_CHOSEN'] < 1]
-        print(f'Warging 1 dollar in the bet of machine predict, at the end of {len(DB_test)} games, \n'
-        f'the gain is {sum(DB_test["GAIN"])} and the returning is {sum(DB_test["GAIN"]) / len(DB_test) * 100:.2f}%.')
+        df_train = pd.merge(X_train, premier_league_ds, how='left')
+        if tar == 'FTR':
+            DB_test['ODD_CHOSEN'] = np.select([DB_test['PREDICTS'] == 2, DB_test['PREDICTS'] == 1, DB_test['PREDICTS'] == 0], [DB_test['AvgHr'] - 1, DB_test['AvgDr'] - 1, DB_test['AvgAr'] - 1], default=None)
+            DB_test = DB_test[['Date', 'HomeTeam', 'AwayTeam', 'FTR', 'PREDICTS', 'ODD_CHOSEN', 'AvgHr', 'AvgDr', 'AvgAr']]
+            DB_test['GAIN'] = np.where(DB_test['FTR'] == DB_test['PREDICTS'], DB_test['ODD_CHOSEN'], -1)
+            #DB_test = DB_test[DB_test['ODD_CHOSEN'] < 1]
+            print(f'Warging 1 dollar in the bet of machine predict, at the end of {len(DB_test)} games, \n'
+            f'the gain is {sum(DB_test["GAIN"])} and the returning is {sum(DB_test["GAIN"]) / len(DB_test) * 100:.2f}%.')
 
-        return DB_test
+        if tar == 'FTGT_C':
+            DB_test['ODD_CHOSEN'] = np.select([DB_test['PREDICTS'] == 1, DB_test['PREDICTS'] == 0], [DB_test['BbAv>2.5'] - 1, DB_test['BbAv<2.5'] - 1], default=None)
+            DB_test = DB_test[['Date', 'HomeTeam', 'AwayTeam', 'FTR', 'FTGT_C', 'PREDICTS', 'ODD_CHOSEN', 'BbAv>2.5', 'BbAv<2.5']]
+            DB_test['GAIN'] = np.where(DB_test['FTGT_C'] == DB_test['PREDICTS'], DB_test['ODD_CHOSEN'], -1)
+            #DB_test = DB_test[DB_test['ODD_CHOSEN'] < 1]
+            print(f'Warging 1 dollar in the bet of machine predict, at the end of {len(DB_test)} games, \n'
+                  f'the gain is {sum(DB_test["GAIN"])} and the returning is {sum(DB_test["GAIN"]) / len(DB_test) * 100:.2f}%.')
+
+        return DB_test, df_train, X_test
 
     if tML == 'regression':
         premier_league_ds = data_set()
@@ -611,3 +623,26 @@ def next_games(tML=str):
         print(next_games[['HomeTeam', 'AwayTeam', 'Predicts']])
 
         return next_games, premier_league_ds
+
+
+def training_test_data_2(tar1=str, tar2=str):
+
+    features, target1 = feature_and_target('classifier', tar1)
+
+    DB_test, df_train, X_test = training_test_data('classifier', tar1)
+
+    X_train = df_train[features]
+    y_train = df_train[tar2]
+    X_test = X_test[features]
+    y_test = DB_test[tar2]
+
+    X_train_transf, X_test_transf = scaler(X_train, X_test)
+
+    DB_test['PREDICTS_TAR2'] = XGB_r(X_train_transf, y_train, X_test_transf, y_test, text=True)
+    DB_test = DB_test[DB_test['PREDICTS'] == 2]
+    DB_test['aposta'] = np.where(DB_test['AvgHr'] > DB_test['PREDICTS_TAR2'], 1, 0)
+    db_test_menor = DB_test[DB_test['aposta'] == 1]
+    db_test_maior = DB_test[DB_test['aposta'] == 0]
+    print(sum(db_test_maior['GAIN']) / len(db_test_maior))
+    return DB_test
+
